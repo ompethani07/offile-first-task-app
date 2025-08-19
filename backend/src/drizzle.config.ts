@@ -5,7 +5,7 @@ export default {
   out: "./drizzle",           // where drizzle migrations go
   dialect: "postgresql",      // ✅ instead of driver: "pg"
   dbCredentials: {
-    url: "postgresql://mydb_byxo_user:KCtTjIs8V8wwcvGzlJxZQjrsgnUZIacV@dpg-d2hjj8be5dus738mcg1g-a.singapore-postgres.render.com/mydb_byxo?sslmode=require",
+    url: process.env.DATABASE_URL,
     ssl: {
         rejectUnauthorized: false, // important for Render/Postgres
       },// important for Render/Postgres // needed on Render
