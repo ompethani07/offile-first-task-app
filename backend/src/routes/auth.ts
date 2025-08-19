@@ -5,121 +5,119 @@ import { users } from "../db/schema";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { auth, AuthRequest } from "../midleware/auth";
-
 const authRouter = Router();
-const JWT_SECRET = process.env.JWT_SECRET || "password";
+
 
 interface SignupBody {
-  name: string;
-  email: string;
-  password: string;
+    name: string;
+    email: string;
+    password: string;
 }
 interface LoginBody {
-  email: string;
-  password: string;
+    email: string;
+    password: string;
 }
 
-// Signup route
 authRouter.post("/signup", async (req: Request<{}, {}, SignupBody>, res: Response) => {
-  try {
-    const { name, email, password } = req.body;
+    try {
+        const { name, email, password } = req.body;
 
-    // Check if email exists
-    const existingUser = await db.select().from(users).where(eq(users.email, email));
-    if (existingUser.length > 0) {
-      return res.status(400).json({ error: "User already exists" });
+        // Check if email exists
+        const existingUser = await db
+            .select()
+            .from(users)
+            .where(eq(users.email, email));
+
+        if (existingUser.length > 0) {
+            return res.status(400).json({ error: "User already exists" });
+        }
+
+       const hashPassword = bcrypt.hashSync(password, 10); // Hash the password
+        
+       const newUser = {
+            name,
+            email,
+            password: hashPassword,
+        };
+
+        // Insert new user into the database
+        const [user] = await db.insert(users).values(newUser).returning();
+        if (!user) {
+            return res.status(500).json({ error: "Failed to create user" });
+        }
+
+        // Generate JWT token
+         const token =  jwt.sign({ id: user.id }, "password");
+        res.status(201).json({
+            token,
+            ...user
+        });
+        res.status(201).json({ message: "User created successfully" });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: String(error) });
     }
-
-    // Hash password
-    const hashPassword = bcrypt.hashSync(password, 10);
-
-    // Insert user
-    const [user] = await db.insert(users).values({
-      name,
-      email,
-      password: hashPassword,
-    }).returning();
-
-    if (!user) {
-      return res.status(500).json({ error: "Failed to create user" });
-    }
-
-    // Generate token
-    const token = jwt.sign({ id: user.id }, JWT_SECRET);
-
-    // Remove password from response
-    const safeUser = { ...user };
-    delete (safeUser as any).password;
-
-    res.status(201).json({ token, user: safeUser });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: String(error) });
-  }
 });
 
-// Login route
 authRouter.post("/login", async (req: Request<{}, {}, LoginBody>, res: Response) => {
-  try {
-    const { email, password } = req.body;
+    try {
+        const { email, password } = req.body;
 
-    const [user] = await db.select().from(users).where(eq(users.email, email));
-    if (!user) {
-      return res.status(400).json({ error: "Invalid email or password" });
+        // Find user by email
+        const [user] = await db.select().from(users).where(eq(users.email, email));
+
+        if (!user) {
+            return res.status(400).json({ error: "Invalid email or password" });
+        }
+
+       const token =  jwt.sign({ id: user.id }, "password");
+        // Check password
+        const isPasswordValid = bcrypt.compareSync(password, user.password);
+        if (!isPasswordValid) {
+            return res.status(400).json({ error: "Invalid email or password" });
+        }
+
+       res.status(200).json({
+            token,
+            ...user
+       })
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: String(error) });
     }
-
-    const isPasswordValid = bcrypt.compareSync(password, user.password);
-    if (!isPasswordValid) {
-      return res.status(400).json({ error: "Invalid email or password" });
-    }
-
-    const token = jwt.sign({ id: user.id }, JWT_SECRET);
-
-    const safeUser = { ...user };
-    delete (safeUser as any).password;
-
-    res.status(200).json({ token, user: safeUser });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: String(error) });
-  }
 });
 
-// Token validation route
-authRouter.post("/tokenIsValid", async (req, res) => {
-  try {
+authRouter.post("/tokenIsValid",async (req,res)=>{
     const token = req.header("x-auth-token");
-    if (!token) return res.json(false);
+    if(!token) return res.json(false);
+    try {
+        const verified = jwt.verify(token, "password");
+        if(!verified) return res.json(false);
 
-    const verified = jwt.verify(token, JWT_SECRET);
-    if (!verified) return res.json(false);
+        const user = await db.select().from(users).where(eq(users.id, (verified as any).id));
+        if(user.length === 0) return res.json(false);
 
-    const user = await db.select().from(users).where(eq(users.id, (verified as any).id));
-    if (user.length === 0) return res.json(false);
-
-    res.json(true);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: String(error) });
-  }
+        res.json(true);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: String(error) });
+    }
 });
 
-// Get current user
-authRouter.get("/", auth, async (req: AuthRequest, res: Response) => {
-  try {
-    if (!req.userId) return res.status(401).json({ error: "Unauthorized" });
-
-    const [user] = await db.select().from(users).where(eq(users.id, req.userId));
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    const safeUser = { ...user };
-    delete (safeUser as any).password;
-
-    res.json({ ...safeUser, token: req.token });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: String(error) });
-  }
+authRouter.get("/",auth, async (req :AuthRequest, res) => {
+    try {
+        if (!req.userId) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
+        const user = await db.select().from(users).where(eq(users.id, req.userId));
+        if (user.length === 0) {
+            return res.status(404).json({ error: "User not found" });
+        }
+        res.json({...user[0], token: req.token });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: String(error) });
+    }
 });
-
 export default authRouter;
