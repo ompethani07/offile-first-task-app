@@ -48,11 +48,17 @@ authRouter.post("/signup", async (req: Request<{}, {}, SignupBody>, res: Respons
 
         // Generate JWT token
          const token =  jwt.sign({ id: user.id }, "password");
-        res.status(201).json({
+       res.status(201).json({
+            message: "User created successfully",
             token,
-            ...user
+            user: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                created_at: user.created_at,
+                updated_at: user.updated_at,
+            }
         });
-        res.status(201).json({ message: "User created successfully" });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: String(error) });
