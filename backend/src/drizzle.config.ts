@@ -8,6 +8,6 @@ export default {
   out: "./drizzle",           // where drizzle migrations go
   dialect: "postgresql",
   dbCredentials: {
-    url: DATABASE_URL + "?sslmode=require", // ensure SSL for Render
+    url: DATABASE_URL, // ensure SSL for Render
   },
 } satisfies Config;
