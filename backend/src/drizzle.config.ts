@@ -1,14 +1,13 @@
-import { defineConfig } from "drizzle-kit";
-export default defineConfig({
-    dialect: "postgresql",
-    schema: "./db/schema.ts",
-    out : "./drizzle",
-    dbCredentials:{
-        host : "localhost",
-        port    : 5432,
-        database: "mydb" , 
-        user: "postgres",
-        password: "test123",
-        ssl: false,
-    },
-})
+import type { Config } from "drizzle-kit";
+
+export default {
+  schema: "./db/schema.ts",   // adjust path to your schema file
+  out: "./drizzle",           // where drizzle migrations go
+  dialect: "postgresql",      // ✅ instead of driver: "pg"
+  dbCredentials: {
+    url: "postgresql://mydb_byxo_user:KCtTjIs8V8wwcvGzlJxZQjrsgnUZIacV@dpg-d2hjj8be5dus738mcg1g-a.singapore-postgres.render.com/mydb_byxo?sslmode=require",
+    ssl: {
+        rejectUnauthorized: false, // important for Render/Postgres
+      },// important for Render/Postgres // needed on Render
+}
+} satisfies Config;
