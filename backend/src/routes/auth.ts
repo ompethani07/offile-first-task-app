@@ -7,21 +7,19 @@ import jwt from "jsonwebtoken";
 import { auth, AuthRequest } from "../midleware/auth";
 
 const authRouter = Router();
+const JWT_SECRET = process.env.JWT_SECRET || "password";
 
 interface SignupBody {
   name: string;
   email: string;
   password: string;
 }
-
 interface LoginBody {
   email: string;
   password: string;
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || "password";
-
-// ✅ SIGNUP
+// Signup route
 authRouter.post("/signup", async (req: Request<{}, {}, SignupBody>, res: Response) => {
   try {
     const { name, email, password } = req.body;
@@ -35,7 +33,7 @@ authRouter.post("/signup", async (req: Request<{}, {}, SignupBody>, res: Respons
     // Hash password
     const hashPassword = bcrypt.hashSync(password, 10);
 
-    // Insert new user
+    // Insert user
     const [user] = await db.insert(users).values({
       name,
       email,
@@ -46,65 +44,57 @@ authRouter.post("/signup", async (req: Request<{}, {}, SignupBody>, res: Respons
       return res.status(500).json({ error: "Failed to create user" });
     }
 
-    // Generate JWT
+    // Generate token
     const token = jwt.sign({ id: user.id }, JWT_SECRET);
 
-    // Don’t send hashed password in response
-    const { password: _, ...userWithoutPassword } = user;
+    // Remove password from response
+    const safeUser = { ...user };
+    delete (safeUser as any).password;
 
-    res.status(201).json({
-      token,
-      user: userWithoutPassword,
-    });
+    res.status(201).json({ token, user: safeUser });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: String(error) });
   }
 });
 
-// ✅ LOGIN
+// Login route
 authRouter.post("/login", async (req: Request<{}, {}, LoginBody>, res: Response) => {
   try {
     const { email, password } = req.body;
 
-    // Find user by email
     const [user] = await db.select().from(users).where(eq(users.email, email));
     if (!user) {
       return res.status(400).json({ error: "Invalid email or password" });
     }
 
-    // Validate password
     const isPasswordValid = bcrypt.compareSync(password, user.password);
     if (!isPasswordValid) {
       return res.status(400).json({ error: "Invalid email or password" });
     }
 
-    // Generate JWT
     const token = jwt.sign({ id: user.id }, JWT_SECRET);
 
-    // Don’t send hashed password in response
-    const { password: _, ...userWithoutPassword } = user;
+    const safeUser = { ...user };
+    delete (safeUser as any).password;
 
-    res.status(200).json({
-      token,
-      user: userWithoutPassword,
-    });
+    res.status(200).json({ token, user: safeUser });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: String(error) });
   }
 });
 
-// ✅ TOKEN VALIDATION
+// Token validation route
 authRouter.post("/tokenIsValid", async (req, res) => {
-  const token = req.header("x-auth-token");
-  if (!token) return res.json(false);
-
   try {
-    const verified = jwt.verify(token, JWT_SECRET) as { id: string };
+    const token = req.header("x-auth-token");
+    if (!token) return res.json(false);
+
+    const verified = jwt.verify(token, JWT_SECRET);
     if (!verified) return res.json(false);
 
-    const user = await db.select().from(users).where(eq(users.id, verified.id));
+    const user = await db.select().from(users).where(eq(users.id, (verified as any).id));
     if (user.length === 0) return res.json(false);
 
     res.json(true);
@@ -114,25 +104,18 @@ authRouter.post("/tokenIsValid", async (req, res) => {
   }
 });
 
-// ✅ GET USER PROFILE (Protected Route)
-authRouter.get("/", auth, async (req: AuthRequest, res) => {
+// Get current user
+authRouter.get("/", auth, async (req: AuthRequest, res: Response) => {
   try {
-    if (!req.userId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
+    if (!req.userId) return res.status(401).json({ error: "Unauthorized" });
 
-    const user = await db.select().from(users).where(eq(users.id, req.userId));
-    if (user.length === 0) {
-      return res.status(404).json({ error: "User not found" });
-    }
+    const [user] = await db.select().from(users).where(eq(users.id, req.userId));
+    if (!user) return res.status(404).json({ error: "User not found" });
 
-    // Don’t send password in response
-    const { password: _, ...userWithoutPassword } = user[0];
+    const safeUser = { ...user };
+    delete (safeUser as any).password;
 
-    res.json({
-      ...userWithoutPassword,
-      token: req.token,
-    });
+    res.json({ ...safeUser, token: req.token });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: String(error) });
